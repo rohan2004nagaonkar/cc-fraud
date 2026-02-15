@@ -6,7 +6,7 @@ The app loads the dataset dynamically from Kaggle via the Croissant metadata int
 
 ## Demo
 
-- **Streamlit Community Cloud**: *([add your deployed URL here](https://cc-fraud-rohan-nagaonkar.streamlit.app/))*
+- **Streamlit Community Cloud**: *([app link](https://cc-fraud-rohan-nagaonkar.streamlit.app/))*
 
 ## Features
 
