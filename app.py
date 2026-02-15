@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
+import mlcroissant as mlc
 import plotly.express as px
 from sklearn.preprocessing import RobustScaler
 from sklearn.model_selection import train_test_split
@@ -12,6 +13,9 @@ from imblearn.under_sampling import RandomUnderSampler
 from imblearn.pipeline import Pipeline as ImbPipeline
 import warnings
 warnings.filterwarnings('ignore')
+
+
+KAGGLE_CROISSANT_URL = "https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud/croissant/download"
 
 # PAGE CONFIG
 st.set_page_config(
@@ -276,17 +280,70 @@ st.markdown('<h1 class="main-header"> F.R.A.U.D  G.U.A.R.D</h1>', unsafe_allow_h
 st.markdown('<p style="text-align: center; font-size: 1.2rem; color: #666;">Your Intelligent Investment Companion</p>', unsafe_allow_html=True)
 
 # ===============================
-# TRAIN MODEL 
+# DATA LOADING (DYNAMIC)
 # ===============================
+
+@st.cache_data(show_spinner="Downloading dataset...")
+def load_data(croissant_url: str = KAGGLE_CROISSANT_URL):
+    """Load dataset dynamically via Kaggle Croissant."""
+
+    try:
+        dataset = mlc.Dataset(croissant_url)
+
+        record_sets = getattr(dataset.metadata, "record_sets", None)
+        if not record_sets:
+            raise RuntimeError("No record sets found in Croissant metadata")
+
+        expected_cols = {"Time", "Amount", "Class"}
+        best_df = None
+        best_score = -1
+        last_err = None
+
+        for rs in record_sets:
+            try:
+                records = dataset.records(record_set=rs.uuid)
+                df = pd.DataFrame(records)
+                if df.empty:
+                    continue
+
+                df.columns = [str(c).strip() for c in df.columns]
+                normalized_cols = {c.split("/")[-1] for c in df.columns}
+                score = len(expected_cols.intersection(normalized_cols))
+                if score > best_score:
+                    best_score = score
+                    best_df = df
+                    if score == len(expected_cols):
+                        break
+            except Exception as inner_e:
+                last_err = inner_e
+                continue
+
+        if best_df is None:
+            raise RuntimeError(f"Unable to materialize any record set into a table. Last error: {last_err}")
+
+        rename_map = {c: c.split("/")[-1] for c in best_df.columns}
+        best_df = best_df.rename(columns=rename_map)
+
+        missing = expected_cols.difference(set(best_df.columns))
+        if missing:
+            raise RuntimeError(
+                "Loaded Croissant data but required columns are missing: "
+                f"{sorted(missing)}. Available columns: {best_df.columns.tolist()}"
+            )
+
+        return best_df
+
+    except Exception as e:
+        st.error(f"Dataset loading failed from Kaggle link: {e}")
+        st.stop()
+
+# ---------- MODEL TRAINING ----------
+
 @st.cache_resource
 def train_model():
-    """Train XGBoost model on the full dataset"""
-    try:
-        df = pd.read_csv('creditcard.csv')
-    except FileNotFoundError:
-        st.error(" Dataset not found. Please ensure 'creditcard.csv' exists in the same folder.")
-        st.stop()
-    
+    """Train XGBoost model on full dataset"""
+
+    df = load_data()
     # Create scalers
     amount_scaler = RobustScaler()
     time_scaler = RobustScaler()
@@ -346,11 +403,7 @@ progress.progress(66)
 status_text.text(" Loading transaction data...")
 
 # Load data
-try:
-    df = pd.read_csv('creditcard.csv')
-except FileNotFoundError:
-    st.error("❌ Dataset not found.")
-    st.stop()
+df = load_data()
 
 progress.progress(100)
 status_text.text(" System ready!")
